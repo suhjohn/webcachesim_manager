@@ -1,0 +1,29 @@
+version: '3'
+
+services:
+  db:
+    image: postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+  webcachesim-server:
+    command: ./run.sh
+    build: .
+    volumes:
+      - .:/webcachesim_manager
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+  webcachesim-frontend:
+    command: "yarn start"
+    build: webcachesim_frontend/.
+    volumes:
+      - ./webcachesim_frontend:/app
+    ports:
+      - "3001:3000"
+    depends_on:
+      - webcachesim-server

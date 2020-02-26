@@ -1,0 +1,23 @@
+{
+  "scripts": {
+    "dev": "next",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@ant-design/colors": "^4.0.0-alpha.1",
+    "@material-ui/core": "^4.9.3",
+    "@material-ui/icons": "^4.9.1",
+    "@material-ui/lab": "^4.0.0-alpha.43",
+    "@zeit/next-css": "^1.0.1",
+    "@zeit/next-sass": "^1.0.1",
+    "axios": "^0.19.2",
+    "clsx": "^1.1.0",
+    "next": "latest",
+    "node-sass": "4.7.2",
+    "rc-progress": "^2.5.2",
+    "react": "^16.7.0",
+    "react-dom": "^16.7.0",
+    "react-spinners": "^0.8.0"
+  }
+}
