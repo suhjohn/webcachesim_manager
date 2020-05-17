@@ -141,6 +141,4 @@ ENVIRONMENT_FILE  = config_dir + "environment_vars.yaml"
 
 with open(AUTHENTICATION_PARAM_FILE) as f:
     auth_params = {**yaml.load(f)}
-GITHUB_KEY = auth_params["github_key"]
-del auth_params["github_key"]
 

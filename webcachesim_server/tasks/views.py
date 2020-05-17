@@ -233,7 +233,7 @@ class NodeRunningProcessView(APIView):
 class NodeRepositoryView(APIView):
     def post(self, request):
         def _create_repo(hostname):
-            command = f"ssh -o StrictHostKeyChecking=no {hostname} 'git clone https://suhjohn:{settings.GITHUB_KEY}@github.com/suhjohn/webcachesim.git; cd ~/webcachesim; ./setup.sh'"
+            command = f"ssh -o StrictHostKeyChecking=no {hostname} 'git clone https://github.com/suhjohn/lrb; cd ~/lrb; ./setup.sh'"
             proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
             proc.wait()
 
@@ -246,7 +246,7 @@ class NodeRepositoryView(APIView):
 
     def patch(self, request):
         def _update_repo(hostname):
-            command = f"ssh -y  {hostname} 'cd ~/webcachesim; git pull; ./build.sh'"
+            command = f"ssh -y  {hostname} 'cd ~/lrb; git pull; ./build.sh'"
             proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
             proc.wait()
 

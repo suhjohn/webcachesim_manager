@@ -7,7 +7,7 @@ import time
 
 def start_db():
     # start db
-    command = "docker-compose up -d"
+    command = "sudo docker-compose up -d"
     res_str = subprocess.check_output(command, shell=True, stderr=None).decode("utf-8")
     return res_str
 
