@@ -7,12 +7,14 @@ import subprocess
 from multiprocessing import Process
 
 import os
+
+from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import authentication, permissions, status
 
 from .background_task import transition_tasks
-from .serializers import CreatedTaskSerializer, TaskSerializer
+from .serializers import CreatedTaskSerializer, TaskSerializer, RemoteHostSerializer
 from .models import Task, RemoteHost, get_running_tasks, get_task_ids_running_status
 from django.conf import settings
 
@@ -127,6 +129,9 @@ class DefaultConfigRetrieveView(APIView):
         with open(settings.TRACE_PARAM_FILE) as f:
             trace_params = yaml.load(f)
 
+        if config_params.get("github_key"):
+            del config_params["github_key"]
+
         tasks = generate_task_parameters(config_params, algorithm_params, trace_params)
         return Response({"tasks": tasks}, status=status.HTTP_200_OK)
 
@@ -151,34 +156,33 @@ class DefaultNodesRetrieveView(APIView):
 
             return Response({"nodes": hosts}, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({"nodes":[], "exception": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"nodes": [], "exception": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def post(self, request, format=None):
         """
         """
-
-        def _init_project(hostname):
-            pass
-
         remote_hosts = request.data["remote_hosts"]
-        remote_hosts_to_create = [RemoteHost(hostname=host["hostname"], capacity=host["capacity"], is_active=False)
-                                  for host in remote_hosts]
+        remote_hostnames = [host["hostname"] for host in remote_hosts]
+        remote_hostname_to_capacity = {host["hostname"]: host["capacity"] for host in remote_hosts}
+        existing_remote_hosts = RemoteHost.objects.filter(hostname__in=remote_hostnames)
+        existing_remote_hostnames = [host.hostname for host in existing_remote_hosts]
+        remote_hostnames_to_create = list(set(remote_hostnames) - set(existing_remote_hostnames))
+        remote_hosts_to_create = [RemoteHost(hostname=host, is_active=True, capacity=remote_hostname_to_capacity[host])
+                                  for host in remote_hostnames_to_create]
         try:
             RemoteHost.objects.bulk_create(remote_hosts_to_create, ignore_conflicts=True)
-            hostnames = [host.hostname for host in remote_hosts_to_create]
-            created_remote_hosts = RemoteHost.objects.filter(hostname__in=hostnames)
-            # Activate just created ones
-            for host in created_remote_hosts:
+            for host in existing_remote_hosts:
+                host.capacity = remote_hostname_to_capacity[host.hostname]
                 host.is_active = True
-            RemoteHost.objects.bulk_update(created_remote_hosts, ['is_active'])
+            RemoteHost.objects.bulk_update(existing_remote_hosts, ['is_active', 'capacity'])
             # Deactivate the rest
-            deactivate_hosts = RemoteHost.objects.exclude(hostname__in=hostnames)
+            deactivate_hosts = RemoteHost.objects.exclude(hostname__in=remote_hostnames)
             for host in deactivate_hosts:
                 host.is_active = False
-            RemoteHost.objects.bulk_update(deactivate_hosts, ['is_active'])
-
+            RemoteHost.objects.bulk_update(deactivate_hosts, ['is_active', 'capacity'])
             return Response({}, status=status.HTTP_201_CREATED)
         except Exception as e:
+            print(e)
             return Response({"message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -189,7 +193,7 @@ class NodeRunningProcessView(APIView):
 
     def get(self, request):
         remote_hosts = RemoteHost.objects.filter(is_active=True).values_list("hostname")
-        pool = ThreadPool(10)
+        pool = ThreadPool(30)
         res = pool.map(get_running_tasks, remote_hosts)
         pool.close()
         pool.join()
@@ -213,22 +217,28 @@ class NodeRunningProcessView(APIView):
                 subprocess.check_output(kill_command, shell=True, stderr=None)
 
         remote_host_names = request.data["remote_host_names"]
-        pool = ThreadPool(10)
+        pool = ThreadPool(30)
         pool.map(_kill_webcachesim, remote_host_names)
         pool.close()
         pool.join()
+        with transaction.atomic():
+            running_tasks = Task.objects.filter(status=Task.RUNNING)
+            for task in running_tasks:
+                task.status = Task.FAILED
+            Task.objects.bulk_update(running_tasks, ["status"])
+
         return Response({}, status=status.HTTP_204_NO_CONTENT)
 
 
 class NodeRepositoryView(APIView):
     def post(self, request):
         def _create_repo(hostname):
-            command = f"ssh -y  {hostname} 'git clone https://suhjohn:{settings.GITHUB_KEY}@github.com/suhjohn/webcachesim.git; cd ~/webcachesim; ./setup.sh'"
+            command = f"ssh -o StrictHostKeyChecking=no {hostname} 'git clone https://suhjohn:{settings.GITHUB_KEY}@github.com/suhjohn/webcachesim.git; cd ~/webcachesim; ./setup.sh'"
             proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
             proc.wait()
 
         remote_host_names = request.data["remote_host_names"]
-        pool = ThreadPool(10)
+        pool = ThreadPool(30)
         pool.map(_create_repo, remote_host_names)
         pool.close()
         pool.join()
@@ -236,12 +246,12 @@ class NodeRepositoryView(APIView):
 
     def patch(self, request):
         def _update_repo(hostname):
-            command = f"ssh -y  {hostname} 'cd ~/webcachesim; git pull; ./setup.sh'"
+            command = f"ssh -y  {hostname} 'cd ~/webcachesim; git pull; ./build.sh'"
             proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
             proc.wait()
 
         remote_host_names = request.data["remote_host_names"]
-        pool = ThreadPool(10)
+        pool = ThreadPool(30)
         pool.map(_update_repo, remote_host_names)
         pool.close()
         pool.join()
@@ -256,7 +266,22 @@ status_qp_to_model = {
 }
 
 
-# Create your views here.
+class ActiveNodeView(APIView):
+    def get(self, request):
+        hosts = RemoteHost.objects.filter(is_active=True)
+        serializer = RemoteHostSerializer(hosts, many=True)
+        data = serializer.data
+        return Response({"hosts": data}, status=status.HTTP_200_OK)
+
+
+class ActiveNodeCheckView(APIView):
+    def post(self, request):
+        # create dummy tasks
+        hosts = RemoteHost.objects.filter(is_active=True)
+        serializer = RemoteHostSerializer(hosts, many=True)
+        data = serializer.data
+        return Response({"hosts": data}, status=status.HTTP_200_OK)
+
 
 class TaskListCreateView(APIView):
     """
@@ -271,11 +296,17 @@ class TaskListCreateView(APIView):
         """
         tasks = request.data["tasks"]
         tasks_to_create = list()
+        task_ids = []
         for task_parameters in tasks:
             task_id = Task.get_hash(task_parameters)
+            task_ids.append(task_id)
             tasks_to_create.append(Task(task_id=task_id, parameters=task_parameters))
         try:
             Task.objects.bulk_create(tasks_to_create, ignore_conflicts=True)
+            existing_tasks = Task.objects.filter(task_id__in=task_ids)
+            for task in existing_tasks:
+                task.status = Task.CREATED
+            Task.objects.bulk_update(existing_tasks, ['status'])
             return Response({}, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -284,7 +315,7 @@ class TaskListCreateView(APIView):
         status_to_filter = request.query_params.get("status", "created")
         if status_to_filter not in status_qp_to_model:
             raise Exception
-        tasks = Task.objects.filter(status=status_qp_to_model[status_to_filter])
+        tasks = Task.objects.filter(status=status_qp_to_model[status_to_filter])[:200]
         if status_to_filter == "created":
             serializer = CreatedTaskSerializer(tasks, many=True)
             data = serializer.data

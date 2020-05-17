@@ -1,10 +1,11 @@
 import json
-import time
 import hashlib
 import re
 import subprocess
 from django.db import models
 from django.contrib.postgres.fields import JSONField
+
+from .utils import get_export_string
 
 
 def _get_task_identifier(task_params: dict):
@@ -26,6 +27,16 @@ class RemoteHost(models.Model):
         command = f"ssh {self.hostname} 'ps aux | grep webcachesim'"
         res_str = subprocess.check_output(command, shell=True, stderr=None, timeout=10).decode("utf-8")
         return list(set([val for val in re.findall(r'(?<=task_id )[a-zA-Z0-9_]+', res_str)]))
+
+    def __repr__(self):
+        return self.hostname
+
+    def __str__(self):
+        return self.hostname
+
+
+class PythonCachesimTask(models.Model):
+    pass
 
 
 # Denotes the current state of the task
@@ -59,6 +70,9 @@ class Task(models.Model):
     current_count = models.BigIntegerField(null=True)
     count_per_second = models.BigIntegerField(null=True)
 
+    def __str__(self):
+        return f"{self.task_id} {self.parameters}"
+
     @staticmethod
     def get_hash(parameters):
         unique_tuple = _get_task_identifier(parameters)
@@ -82,7 +96,7 @@ class Task(models.Model):
     def start(self):
         if self.status == self.RUNNING:
             raise Exception
-        command = f"nohup ssh {self.executing_host.hostname} '{self.task_str} > /dev/null 2>&1 &'"
+        command = f"nohup ssh {self.executing_host.hostname} '{get_export_string()} {self.task_str} > /dev/null 2>&1 &'"
         print(command)
         subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
 

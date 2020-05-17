@@ -242,17 +242,23 @@ function ListPage({ tasks, automaticState }) {
 }
 
 ListPage.getInitialProps = async (ctx) => {
+  let status = ctx.query.status;
+  if (!status) {
+    status = "created";
+  }
   const resp = await axios.get("tasks/", {
-    params: { status: ctx.query.status }
+    params: { status: status }
   });
   const automaticResp = await axios.get("tasks/automatic/");
-  resp.data.tasks.sort(function(a, b) {
-    let keyA = a["executing_host"]["hostname"],
-      keyB = b["executing_host"]["hostname"];
-    if (keyA < keyB) return -1;
-    if (keyA > keyB) return 1;
-    return 0;
-  });
+  if (status !== "created") {
+    resp.data.tasks.sort(function(a, b) {
+      let keyA = a["executing_host"]["hostname"],
+        keyB = b["executing_host"]["hostname"];
+      if (keyA < keyB) return -1;
+      if (keyA > keyB) return 1;
+      return 0;
+    });
+  }
 
   return { tasks: resp.data.tasks, automaticState: automaticResp.data.state };
 };

@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'background_task',
     'corsheaders',
+    'django_extensions',
 
     'tasks',
 ]
@@ -89,8 +90,8 @@ DATABASES = {
         'NAME': 'postgres',
         'USER': 'postgres',
         'PASSWORD': 'postgres',
-        'HOST': 'db',
-        'PORT': '5432'
+        'HOST': 'localhost',
+        'PORT': '5433'
     }
 }
 
@@ -136,7 +137,10 @@ ALGORITHM_PARAM_FILE = config_dir + "algorithm_params.yaml"
 AUTHENTICATION_PARAM_FILE = config_dir + "authentication.yaml"
 TASK_CONFIG_PARAM_FILE = config_dir + "config_params.yaml"
 TRACE_PARAM_FILE = config_dir + "trace_params.yaml"
+ENVIRONMENT_FILE  = config_dir + "environment_vars.yaml"
 
 with open(AUTHENTICATION_PARAM_FILE) as f:
     auth_params = {**yaml.load(f)}
 GITHUB_KEY = auth_params["github_key"]
+del auth_params["github_key"]
+

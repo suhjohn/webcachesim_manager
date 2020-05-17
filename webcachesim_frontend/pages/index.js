@@ -52,6 +52,4 @@ function IndexPage() {
   );
 }
 
-IndexPage.getInitialProps = async (ctx) => {};
-
 export default IndexPage;

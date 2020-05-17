@@ -72,7 +72,9 @@ def transition_tasks():
                     count, running_status = res
                     host_curr_running_task_count[host.hostname] = count
                     host_assigned_tasks_is_running[host.hostname] = running_status
-                print(host_assigned_tasks_is_running)
+
+                print("------ Running task count ------")
+                print(host_curr_running_task_count)
                 # running update to done or failed
                 if running_tasks:
                     # Update progress
@@ -100,7 +102,6 @@ def transition_tasks():
                                 print(f"task {task.id} Done")
                                 task.status = Task.DONE
                                 task.completed_at = datetime.datetime.now(tz=pytz.UTC)
-                                host_curr_running_task_count[host.hostname] -= 1
                             elif not task.is_complete() and host_assigned_tasks_is_running[host.hostname][task.task_id]:
                                 # still running
                                 pass
@@ -108,7 +109,6 @@ def transition_tasks():
                                 # not complete but no longer running
                                 print(f"task {task.id} Failed")
                                 task.status = Task.FAILED
-                                host_curr_running_task_count[host.hostname] -= 1
                         Task.objects.bulk_update(
                             host_running_tasks,
                             ['total_count', 'current_count', 'count_per_second', 'status', 'completed_at']
@@ -116,20 +116,21 @@ def transition_tasks():
 
                 available_cores = {
                     host.hostname: host.capacity - host_curr_running_task_count[host.hostname]
-                    for host in active_hosts
+                    for host in active_hosts if host.capacity - host_curr_running_task_count[host.hostname] > 0
                 }
+                print("-----Available Cores------")
+                print(available_cores)
                 i = 0
                 transitioned_tasks = []
 
                 # failed to running
                 for task in failed_tasks:
-                    print(available_cores)
                     if not available_cores:
                         # no available cores to be scheduled currently
                         break
                     hostname = list(sorted(available_cores.keys()))[i % len(available_cores)]
                     available_cores[hostname] -= 1
-                    if available_cores[hostname] == 0:
+                    if available_cores[hostname] <= 0:
                         print(f"{hostname} exhausted all available cores.")
                         del available_cores[hostname]
                         i -= 1
@@ -141,12 +142,13 @@ def transition_tasks():
                 i = 0
                 # created to running
                 for task in created_tasks:
+                    print(available_cores)
                     if not available_cores:
                         # no available cores to be scheduled currently
                         break
                     hostname = list(sorted(available_cores.keys()))[i % len(available_cores)]
                     available_cores[hostname] -= 1
-                    if available_cores[hostname] == 0:
+                    if available_cores[hostname] <= 0:
                         del available_cores[hostname]
                         i -= 1
                     task.executing_host = hostname_to_host[hostname]
