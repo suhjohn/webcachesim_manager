@@ -14,7 +14,7 @@
     "axios": "^0.19.2",
     "clsx": "^1.1.0",
     "next": "latest",
-    "node-sass": "4.7.2",
+    "node-sass": "4.13.1",
     "rc-progress": "^2.5.2",
     "react": "^16.7.0",
     "react-dom": "^16.7.0",
